@@ -1,0 +1,9 @@
+<library path="lib/libbiped_gait_controller">
+
+    <class name="legged/BipedGaitController" type="legged::BipedGaitController"
+           base_class_type="controller_interface::ControllerBase">
+        <description>
+            The biped controller.
+        </description>
+    </class>
+</library>

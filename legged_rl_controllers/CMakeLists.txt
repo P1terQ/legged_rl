@@ -127,6 +127,17 @@ target_link_libraries(biped_controller
         )
 set_property(TARGET biped_controller PROPERTY CXX_STANDARD 14)
 
+add_library(biped_gait_controller
+        src/BipedGaitController.cpp
+        )
+
+target_link_libraries(biped_gait_controller
+        ${catkin_LIBRARIES}
+        ${pinocchio_LIBRARIES}
+        onnxruntime
+        )
+set_property(TARGET biped_gait_controller PROPERTY CXX_STANDARD 14)
+
 
 add_library(biped_vision_controller
         src/BipedController.cpp

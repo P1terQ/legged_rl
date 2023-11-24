@@ -14,5 +14,7 @@ controllers:
     type: legged/TrotController
   biped_controller:
     type: legged/BipedController
+  biped_gait_controller:
+    type: legged/BipedGaitController
   biped_vision_controller:
     type: legged/BipedVisionController
