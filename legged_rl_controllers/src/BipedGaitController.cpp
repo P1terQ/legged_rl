@@ -421,6 +421,7 @@ bool BipedGaitController::loadRLCfg(ros::NodeHandle& nh) {
                                            robotCfg_.initState.L_KFE_joint, robotCfg_.initState.R_HAA_joint,
                                            robotCfg_.initState.R_HFE_joint, robotCfg_.initState.R_KFE_joint};
   lastActions_.resize(actionsSize_);
+  lastActions_.setZero();
   defaultJointAngles_.resize(defaultJointAngles.size());
   for (int i = 0; i < defaultJointAngles_.size(); i++) {
     defaultJointAngles_(i, 0) = defaultJointAngles[i];

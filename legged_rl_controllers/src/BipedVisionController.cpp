@@ -279,6 +279,7 @@ bool BipedVisionController::loadRLCfg(ros::NodeHandle& nh) {
 
   command_.setZero();
   lastActions_.resize(actionsSize_);
+  lastActions_.setZero();
   std::vector<scalar_t> defaultJointAngles{robotCfg_.initState.L_HAA_joint, robotCfg_.initState.L_HFE_joint,
                                            robotCfg_.initState.L_KFE_joint, robotCfg_.initState.R_HAA_joint,
                                            robotCfg_.initState.R_HFE_joint, robotCfg_.initState.R_KFE_joint};
