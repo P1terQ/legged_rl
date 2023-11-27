@@ -13,11 +13,11 @@ namespace legged {
 bool BipedGaitController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle& controllerNH) {
   // Load policy model and rl cfg
   if (!loadModel(controllerNH)) {
-    ROS_ERROR_STREAM("[RLControllerBase] Failed to load the model. Ensure the path is correct and accessible.");
+    ROS_ERROR_STREAM("[BipedGaitController] Failed to load the model. Ensure the path is correct and accessible.");
     return false;
   }
   if (!loadRLCfg(controllerNH)) {
-    ROS_ERROR_STREAM("[RLControllerBase] Failed to load the rl config. Ensure the yaml is correct and accessible.");
+    ROS_ERROR_STREAM("[BipedGaitController] Failed to load the rl config. Ensure the yaml is correct and accessible.");
     return false;
   }
 
