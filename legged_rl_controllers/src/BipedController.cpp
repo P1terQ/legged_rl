@@ -124,6 +124,11 @@ void BipedController::computeObservation() {
   vector3_t gravityVector(0, 0, -1);
   vector3_t projectedGravity(inverseRot * gravityVector);
 
+  vector3_t zyx_(imu_orientation_offset[0], imu_orientation_offset[1], imu_orientation_offset[2]);
+  matrix_t Rot_ = getRotationMatrixFromZyxEulerAngles(zyx_);
+  baseAngVel = Rot_ * baseAngVel;
+  projectedGravity = Rot_ * projectedGravity;
+
   // command
   vector3_t command = command_;
 
@@ -311,6 +316,10 @@ bool BipedController::loadRLCfg(ros::NodeHandle& nh) {
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/observations_size", observationSize_));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/obs_history_length", obsHistoryLength_));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/encoder_output_size", encoderOutputSize_));
+
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/imu_orientation_offset/yaw", imu_orientation_offset[0]));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/imu_orientation_offset/pitch", imu_orientation_offset[1]));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/imu_orientation_offset/roll", imu_orientation_offset[2]));
 
   actions_.resize(actionsSize_);
   observations_.resize(observationSize_);

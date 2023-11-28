@@ -33,3 +33,8 @@ LeggedRobotCfg:
     observations_size: 34
     obs_history_length: 10
     encoder_output_size: 3
+
+  imu_orientation_offset:
+    roll: -0.03
+    pitch: 0.02
+    yaw: 0.0

@@ -82,6 +82,7 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
   vector3_t basePosition_;
   vector_t lastActions_;
   vector_t defaultJointAngles_;
+  float imu_orientation_offset[3];
 
   // hardware interface
   std::vector<HybridJointHandle> hybridJointHandles_;
