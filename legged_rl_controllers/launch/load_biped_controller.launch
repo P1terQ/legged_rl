@@ -6,7 +6,8 @@
     <arg name="cheater" default="false"/>
 
     <!-- make the files into global parameters -->
-    <param name="policyFile" value="$(find legged_rl_controllers)/policy/biped_policy/policy.onnx"/>
+    <param name="policyModelPath" value="$(find legged_rl_controllers)/policy/biped_policy/policy.onnx"/>
+    <param name="encoderModelPath" value="$(find legged_rl_controllers)/policy/biped_policy/encoder.onnx"/>
 
     <arg name="rl_config_file" default="biped_config.yaml"/>
     <rosparam file="$(find legged_rl_controllers)/config/controllers.yaml" command="load"/>

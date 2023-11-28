@@ -1,6 +1,7 @@
 //
 // Created by luohx on 23-11-15.
 //
+#include <pinocchio/fwd.hpp>
 
 #include "legged_rl_controllers/BipedController.h"
 
@@ -48,6 +49,7 @@ void BipedController::update(const ros::Time& time, const ros::Duration& period)
   // compute observation & actions
   if (loopCount_ % robotCfg_.controlCfg.decimation == 0) {
     computeObservation();
+    computeEncoder();
     computeActions();
     // limit action range
     scalar_t actionMin = -robotCfg_.clipActions;
@@ -70,14 +72,36 @@ void BipedController::computeActions() {
   // create input tensor object
   Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
   std::vector<Ort::Value> inputValues;
-  inputValues.push_back(Ort::Value::CreateTensor<tensor_element_t>(memoryInfo, observations_.data(), observations_.size(),
-                                                                   inputShapes_[0].data(), inputShapes_[0].size()));
+  std::vector<tensor_element_t> combined_obs;
+  for (const auto& item : observations_) {
+    combined_obs.push_back(item);
+  }
+  for (const auto& item : encoderOut_) {
+    combined_obs.push_back(item);
+  }
+  inputValues.push_back(Ort::Value::CreateTensor<tensor_element_t>(memoryInfo, combined_obs.data(), combined_obs.size(),
+                                                                   policyInputShapes_[0].data(), policyInputShapes_[0].size()));
   // run inference
   Ort::RunOptions runOptions;
-  std::vector<Ort::Value> outputValues = sessionPtr_->Run(runOptions, inputNames_.data(), inputValues.data(), 1, outputNames_.data(), 1);
+  std::vector<Ort::Value> outputValues =
+      policySessionPtr_->Run(runOptions, policyInputNames_.data(), inputValues.data(), 1, policyOutputNames_.data(), 1);
 
   for (int i = 0; i < actionsSize_; i++) {
     actions_[i] = *(outputValues[0].GetTensorMutableData<tensor_element_t>() + i);
+  }
+}
+
+void BipedController::computeEncoder() {
+  Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
+  std::vector<Ort::Value> inputValues;
+  inputValues.push_back(Ort::Value::CreateTensor<tensor_element_t>(memoryInfo, proprioHistoryBuffer_.data(), proprioHistoryBuffer_.size(),
+                                                                   encoderInputShapes_[0].data(), encoderInputShapes_[0].size()));
+  Ort::RunOptions runOptions;
+  std::vector<Ort::Value> outputValues =
+      encoderSessionPtr_->Run(runOptions, encoderInputNames_.data(), inputValues.data(), 1, encoderOutputNames_.data(), 1);
+
+  for (int i = 0; i < encoderOutputSize_; i++) {
+    encoderOut_[i] = *(outputValues[0].GetTensorMutableData<tensor_element_t>() + i);
   }
 }
 
@@ -137,8 +161,22 @@ void BipedController::computeObservation() {
       gait;
   // clang-format on
 
+  if (isfirstRecObs_) {
+    int64_t inputSize =
+        std::accumulate(encoderInputShapes_[0].begin(), encoderInputShapes_[0].end(), static_cast<int64_t>(1), std::multiplies<int64_t>());
+    proprioHistoryBuffer_.resize(inputSize);
+    for (size_t i = 0; i < obsHistoryLength_; i++) {
+      proprioHistoryBuffer_.segment(i * observationSize_, observationSize_) = obs.cast<tensor_element_t>();
+    }
+    isfirstRecObs_ = false;
+  }
+  proprioHistoryBuffer_.head(proprioHistoryBuffer_.size() - observationSize_) =
+      proprioHistoryBuffer_.tail(proprioHistoryBuffer_.size() - observationSize_);
+  proprioHistoryBuffer_.tail(observationSize_) = obs.cast<tensor_element_t>();
+
   for (size_t i = 0; i < obs.size(); i++) {
     observations_[i] = static_cast<tensor_element_t>(obs(i));
+    // std::cout << "observations" << i << " " << observations_[i] << std::endl;
   }
   // Limit observation range
   scalar_t obsMin = -robotCfg_.clipObs;
@@ -148,34 +186,93 @@ void BipedController::computeObservation() {
 }
 
 bool BipedController::loadModel(ros::NodeHandle& nh) {
-  std::string policyFilePath;
-  if (!nh.getParam("/policyFile", policyFilePath)) {
+  ROS_INFO_STREAM("load policy model");
+
+  std::string policyModelPath;
+  std::string encoderModelPath;
+  if (!nh.getParam("/policyModelPath", policyModelPath) || !nh.getParam("/encoderModelPath", encoderModelPath)) {
     ROS_ERROR_STREAM("Get policy path fail from param server, some error occur!");
     return false;
   }
-
-  policyFilePath_ = policyFilePath;
-  ROS_INFO_STREAM("Load Onnx model from path : " << policyFilePath);
 
   // create env
   onnxEnvPrt_.reset(new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "LeggedOnnxController"));
   // create session
   Ort::SessionOptions sessionOptions;
+  sessionOptions.SetIntraOpNumThreads(1);
   sessionOptions.SetInterOpNumThreads(1);
-  sessionPtr_ = std::make_unique<Ort::Session>(*onnxEnvPrt_, policyFilePath.c_str(), sessionOptions);
-  // get input and output info
-  inputNames_.clear();
-  outputNames_.clear();
-  inputShapes_.clear();
-  outputShapes_.clear();
+
   Ort::AllocatorWithDefaultOptions allocator;
-  for (int i = 0; i < sessionPtr_->GetInputCount(); i++) {
-    inputNames_.push_back(sessionPtr_->GetInputName(i, allocator));
-    inputShapes_.push_back(sessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+  // policy session
+  std::cout << "load policy from" << policyModelPath.c_str() << std::endl;
+  policySessionPtr_ = std::make_unique<Ort::Session>(*onnxEnvPrt_, policyModelPath.c_str(), sessionOptions);
+  policyInputNames_.clear();
+  policyOutputNames_.clear();
+  policyInputShapes_.clear();
+  policyOutputShapes_.clear();
+  for (int i = 0; i < policySessionPtr_->GetInputCount(); i++) {
+    policyInputNames_.push_back(policySessionPtr_->GetInputName(i, allocator));
+    policyInputShapes_.push_back(policySessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    std::cerr << policySessionPtr_->GetInputName(i, allocator) << std::endl;
+    std::vector<int64_t> shape = policySessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
+    std::cerr << "Shape: [";
+    for (size_t j = 0; j < shape.size(); ++j) {
+      std::cout << shape[j];
+      if (j != shape.size() - 1) {
+        std::cerr << ", ";
+      }
+    }
+    std::cout << "]" << std::endl;
   }
-  for (int i = 0; i < sessionPtr_->GetOutputCount(); i++) {
-    outputNames_.push_back(sessionPtr_->GetOutputName(i, allocator));
-    outputShapes_.push_back(sessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+  for (int i = 0; i < policySessionPtr_->GetOutputCount(); i++) {
+    policyOutputNames_.push_back(policySessionPtr_->GetOutputName(i, allocator));
+    std::cerr << policySessionPtr_->GetOutputName(i, allocator) << std::endl;
+    policyOutputShapes_.push_back(policySessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    std::vector<int64_t> shape = policySessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
+    std::cerr << "Shape: [";
+    for (size_t j = 0; j < shape.size(); ++j) {
+      std::cout << shape[j];
+      if (j != shape.size() - 1) {
+        std::cerr << ", ";
+      }
+    }
+    std::cout << "]" << std::endl;
+  }
+
+  // encoder session
+  std::cout << "load encoder from" << encoderModelPath.c_str() << std::endl;
+  encoderSessionPtr_ = std::make_unique<Ort::Session>(*onnxEnvPrt_, encoderModelPath.c_str(), sessionOptions);
+  encoderInputNames_.clear();
+  encoderOutputNames_.clear();
+  encoderInputShapes_.clear();
+  encoderOutputShapes_.clear();
+  for (int i = 0; i < encoderSessionPtr_->GetInputCount(); i++) {
+    encoderInputNames_.push_back(encoderSessionPtr_->GetInputName(i, allocator));
+    encoderInputShapes_.push_back(encoderSessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    std::cerr << encoderSessionPtr_->GetInputName(i, allocator) << std::endl;
+    std::vector<int64_t> shape = encoderSessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
+    std::cerr << "Shape: [";
+    for (size_t j = 0; j < shape.size(); ++j) {
+      std::cout << shape[j];
+      if (j != shape.size() - 1) {
+        std::cerr << ", ";
+      }
+    }
+    std::cout << "]" << std::endl;
+  }
+  for (int i = 0; i < encoderSessionPtr_->GetOutputCount(); i++) {
+    encoderOutputNames_.push_back(encoderSessionPtr_->GetOutputName(i, allocator));
+    std::cerr << encoderSessionPtr_->GetOutputName(i, allocator) << std::endl;
+    encoderOutputShapes_.push_back(encoderSessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    std::vector<int64_t> shape = encoderSessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
+    std::cerr << "Shape: [";
+    for (size_t j = 0; j < shape.size(); ++j) {
+      std::cout << shape[j];
+      if (j != shape.size() - 1) {
+        std::cerr << ", ";
+      }
+    }
+    std::cout << "]" << std::endl;
   }
 
   ROS_INFO_STREAM("Load Onnx model from successfully !!!");
@@ -212,9 +309,16 @@ bool BipedController::loadRLCfg(ros::NodeHandle& nh) {
 
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/actions_size", actionsSize_));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/observations_size", observationSize_));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/obs_history_length", obsHistoryLength_));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/size/encoder_output_size", encoderOutputSize_));
 
   actions_.resize(actionsSize_);
   observations_.resize(observationSize_);
+  encoderOut_.resize(encoderOutputSize_);
+  std::cout << "actionsSize_ " << actionsSize_ << std::endl;
+  std::cout << "observationSize_ " << observationSize_ << std::endl;
+  std::cout << "encoderOutputSize_ " << encoderOutputSize_ << std::endl;
+  std::cout << "obsHistoryLength_ " << obsHistoryLength_ << std::endl;
 
   command_.setZero();
   baseLinVel_.setZero();

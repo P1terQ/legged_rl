@@ -31,3 +31,5 @@ LeggedRobotCfg:
   size:
     actions_size: 6
     observations_size: 34
+    obs_history_length: 10
+    encoder_output_size: 3
