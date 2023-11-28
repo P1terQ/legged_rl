@@ -111,8 +111,7 @@ void BipedVisionController::computeObservation() {
       commandScaler * command,
       deltaJointPos * obsScales.dofPos,
       jointVel * obsScales.dofVel,
-      actions,
-      contactFlags;
+      actions;
   // clang-format on
 
   vector_t privExplicit(3);
