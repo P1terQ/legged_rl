@@ -38,7 +38,7 @@ LeggedRobotCfg:
 
   size:
     actions_size: 6
-    observations_size: 504
+    observations_size: 482
     depth_latent_size: 32
-    proprio_observation_size: 29
+    proprio_observation_size: 27
     proprio_history_len: 10
