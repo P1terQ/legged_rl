@@ -5,6 +5,8 @@
 
 #include "legged_rl_controllers/BipedController.h"
 
+#include <std_msgs/Float32MultiArray.h>
+
 #include <ocs2_robotic_tools/common/RotationTransforms.h>
 
 #include <pluginlib/class_list_macros.hpp>
@@ -38,6 +40,8 @@ bool BipedController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle
   cmdVelSub_ = controllerNH.subscribe("/cmd_vel", 1, &BipedController::cmdVelCallback, this);
   gTStateSub_ = controllerNH.subscribe("/ground_truth/state", 1, &BipedController::stateUpdateCallback, this);
 
+  debugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/debug_info", 1, true);
+
   return true;
 }
 
@@ -59,11 +63,21 @@ void BipedController::update(const ros::Time& time, const ros::Duration& period)
   }
 
   // set action
+  std_msgs::Float32MultiArray debugInfoArray;
+  debugInfoArray.data.resize(hybridJointHandles_.size() * 5);  // qDes, qMeasure, qError, qdMeasure, tauMeasure
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
     scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
+
+    debugInfoArray.data[i * 5] = pos_des;
+    debugInfoArray.data[i * 5 + 1] = hybridJointHandles_[i].getPosition();
+    debugInfoArray.data[i * 5 + 2] = debugInfoArray.data[i * 5] - debugInfoArray.data[i * 5 + 1];
+    debugInfoArray.data[i * 5 + 3] = hybridJointHandles_[i].getVelocity();
+    debugInfoArray.data[i * 5 + 4] = hybridJointHandles_[i].getEffort();
+
     lastActions_(i, 0) = actions_[i];
   }
+  debugPub_.publish(debugInfoArray);
 
   loopCount_++;
 }
@@ -160,7 +174,7 @@ void BipedController::computeObservation() {
       baseAngVel,
       (jointPos - defaultJointAngles_) * obsScales.dofPos,
       jointVel * obsScales.dofVel,
-      commandScaler * command, 0.7,
+      commandScaler * command, 0.625,
       actions,
       gait_clock,
       gait;

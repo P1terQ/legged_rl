@@ -120,6 +120,9 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
 
   ros::Subscriber gTStateSub_;
   ros::Subscriber cmdVelSub_;
+
+  // debug
+  ros::Publisher debugPub_;
 };
 
 template <typename T>
