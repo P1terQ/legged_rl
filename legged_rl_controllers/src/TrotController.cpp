@@ -22,21 +22,24 @@ void TrotController::handleWalkMode() {
     scalar_t actionMax = robotCfg_.clipActions;
     std::transform(actions_.begin(), actions_.end(), actions_.begin(),
                    [actionMin, actionMax](scalar_t x) { return std::max(actionMin, std::min(actionMax, x)); });
+    // torque limit through action clipping
+    const auto& info = leggedInterface_->getCentroidalModelInfo();
+    vector_t jointPos = rbdState_.segment(6, info.actuatedDofNum);
+    vector_t jointVel = rbdState_.segment(6 + info.generalizedCoordinatesNum, info.actuatedDofNum);
+    for (int i = 0; i < hybridJointHandles_.size(); i++) {
+      scalar_t actionMin =
+          jointPos(i) - defaultJointAngles_(i, 0) +
+          (robotCfg_.controlCfg.damping * jointVel(i) - robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+      scalar_t actionMax =
+          jointPos(i) - defaultJointAngles_(i, 0) +
+          (robotCfg_.controlCfg.damping * jointVel(i) + robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+      actions_[i] = std::max(actionMin / robotCfg_.controlCfg.actionScale,
+                             std::min(actionMax / robotCfg_.controlCfg.actionScale, (scalar_t)actions_[i]));
+    }
   }
 
   // set action
-  const auto& info = leggedInterface_->getCentroidalModelInfo();
-  vector_t jointPos = rbdState_.segment(6, info.actuatedDofNum);
-  vector_t jointVel = rbdState_.segment(6 + info.generalizedCoordinatesNum, info.actuatedDofNum);
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
-    scalar_t actionMin =
-        jointPos(i) - defaultJointAngles_(i, 0) +
-        (robotCfg_.controlCfg.damping * jointVel(i) - robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
-    scalar_t actionMax =
-        jointPos(i) - defaultJointAngles_(i, 0) +
-        (robotCfg_.controlCfg.damping * jointVel(i) + robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
-    actions_[i] = std::max(actionMin / robotCfg_.controlCfg.actionScale,
-                           std::min(actionMax / robotCfg_.controlCfg.actionScale, (scalar_t)actions_[i]));
     scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
     lastActions_(i, 0) = actions_[i];
