@@ -37,10 +37,17 @@ void TrotController::handleWalkMode() {
                              std::min(actionMax / robotCfg_.controlCfg.actionScale, (scalar_t)actions_[i]));
     }
   }
-
+  int buttons = 0;
+  for (int i = 0; i < 11; i++) {
+    buttons += joyInfo.buttons[i];
+  }
+  int working = 1;
+  if (buttons > 3) {
+    working = 0;
+  }
   // set action
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
-    scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
+    scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale * working + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
     lastActions_(i, 0) = actions_[i];
   }
@@ -336,7 +343,13 @@ void TrotController::computeObservation() {
   vector3_t projectedGravity(inverseRot * gravityVector);
 
   // command
-  vector3_t command = command_;
+  // vector3_t command = command_;
+  vector3_t command(joyInfo.axes[1], joyInfo.axes[0], joyInfo.axes[3] * 3.14159);
+  if (joyInfo.buttons[5]) {
+    command(0) *= 2;
+    command(1) *= 2;
+  }
+  // std::cout << command(0) << " " << command(1) << " " << command(3) << std::endl;
 
   // dof position and dof velocity
   vector_t jointPos = rbdState_.segment(6, info.actuatedDofNum);

@@ -17,6 +17,7 @@
 #include <ocs2_centroidal_model/CentroidalModelRbdConversions.h>
 #include <ocs2_mpc/SystemObservation.h>
 #include <ocs2_robotic_tools/common/RotationTransforms.h>
+#include <sensor_msgs/Joy.h>
 
 #include <onnxruntime/onnxruntime_cxx_api.h>
 #include <Eigen/Geometry>
@@ -69,6 +70,11 @@ struct RLRobotCfg {
   ControlCfg controlCfg;
 };
 
+struct JoyInfo {
+  float axes[8];
+  int buttons[11];
+};
+
 class RLControllerBase : public controller_interface::MultiInterfaceController<HybridJointInterface, hardware_interface::ImuSensorInterface,
                                                                                ContactSensorInterface> {
  public:
@@ -96,11 +102,13 @@ class RLControllerBase : public controller_interface::MultiInterfaceController<H
   virtual void setupStateEstimate(const std::string& taskFile, bool verbose);
 
   void cmdVelCallback(const geometry_msgs::Twist& msg);
+  void joyInfoCallback(const sensor_msgs::Joy& msg);
 
   Mode mode_;
   int64_t loopCount_;
   vector3_t command_;
   RLRobotCfg robotCfg_{};
+  JoyInfo joyInfo;
 
   std::shared_ptr<StateEstimateBase> stateEstimate_;
   std::shared_ptr<LeggedInterface> leggedInterface_;
@@ -125,5 +133,6 @@ class RLControllerBase : public controller_interface::MultiInterfaceController<H
   scalar_t standDuration_;
 
   ros::Subscriber cmdVelSub_;
+  ros::Subscriber joyInfoSub_;
 };
 }  // namespace legged

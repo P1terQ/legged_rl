@@ -3,6 +3,7 @@
 //
 
 #include "legged_rl_controllers/RLControllerBase.h"
+#include <string.h>
 #include <pluginlib/class_list_macros.hpp>
 #include "legged_estimation/FromTopiceEstimate.h"
 
@@ -58,6 +59,7 @@ bool RLControllerBase::init(hardware_interface::RobotHW* robotHw, ros::NodeHandl
   setupStateEstimate(taskFile, verbose);
 
   cmdVelSub_ = controllerNH.subscribe("/cmd_vel", 1, &RLControllerBase::cmdVelCallback, this);
+  joyInfoSub_ = controllerNH.subscribe("/joy", 1000, &RLControllerBase::joyInfoCallback, this);
 
   return true;
 }
@@ -110,7 +112,7 @@ void RLControllerBase::handleLieMode() {
 }
 
 void RLControllerBase::handleStandMode() {
-  if (loopCount_ > 5000) {
+  if (loopCount_ > 3000) {
     mode_ = Mode::WALK;
   }
 }
@@ -167,6 +169,24 @@ void RLControllerBase::cmdVelCallback(const geometry_msgs::Twist& msg) {
   command_(0) = msg.linear.x;
   command_(1) = msg.linear.y;
   command_(2) = msg.angular.z;
+}
+
+void RLControllerBase::joyInfoCallback(const sensor_msgs::Joy& msg) {
+  if (msg.header.frame_id.empty()) {
+    return;
+  }
+  // memcpy(joyInfo.axes, msg.axes, sizeof(joyInfo.axes));
+  // memcpy(joyInfo.buttons, msg.buttons, sizeof(joyInfo.buttons));
+  for (int i = 0; i < msg.axes.size(); i++) {
+    joyInfo.axes[i] = msg.axes[i];
+    // std::cout << joyInfo.axes[i];
+    // std::cout << std::endl;
+  }
+  for (int i = 0; i < msg.buttons.size(); i++) {
+    joyInfo.buttons[i] = msg.buttons[i];
+    // std::cout << joyInfo.buttons[i];
+    // std::cout << std::endl;
+  }
 }
 }  // namespace legged
 
