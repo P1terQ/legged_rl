@@ -12,6 +12,8 @@ controllers:
     type: legged/ParkourController
   trot_controller:
     type: legged/TrotController
+  aliengo_controller:
+    type: legged/AliengoController
   biped_controller:
     type: legged/BipedController
   biped_gait_controller:

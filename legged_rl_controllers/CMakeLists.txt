@@ -116,6 +116,18 @@ target_link_libraries(trot_controller
         )
 set_property(TARGET trot_controller PROPERTY CXX_STANDARD 14)
 
+add_library(aliengo_controller
+        src/RLControllerBase.cpp
+        src/AliengoController.cpp
+        )
+
+target_link_libraries(aliengo_controller
+        ${catkin_LIBRARIES}
+        ${pinocchio_LIBRARIES}
+        onnxruntime
+        )
+set_property(TARGET aliengo_controller PROPERTY CXX_STANDARD 14)
+
 add_library(biped_controller
         src/BipedController.cpp
         )

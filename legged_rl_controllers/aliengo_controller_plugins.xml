@@ -1,0 +1,8 @@
+<library path="lib/libaliengo_controller">
+
+    <class name="legged/AliengoController" type="legged::AliengoController" base_class_type="controller_interface::ControllerBase">
+        <description>
+            The tort controller.
+        </description>
+    </class>
+</library>
