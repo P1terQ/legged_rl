@@ -15,11 +15,11 @@ namespace legged {
 bool BipedController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle& controllerNH) {
   // Load policy model and rl cfg
   if (!loadModel(controllerNH)) {
-    ROS_ERROR_STREAM("[RLControllerBase] Failed to load the model. Ensure the path is correct and accessible.");
+    ROS_ERROR_STREAM("[BipedController] Failed to load the model. Ensure the path is correct and accessible.");
     return false;
   }
   if (!loadRLCfg(controllerNH)) {
-    ROS_ERROR_STREAM("[RLControllerBase] Failed to load the rl config. Ensure the yaml is correct and accessible.");
+    ROS_ERROR_STREAM("[BipedController] Failed to load the rl config. Ensure the yaml is correct and accessible.");
     return false;
   }
 
@@ -39,22 +39,66 @@ bool BipedController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle
 
   cmdVelSub_ = controllerNH.subscribe("/cmd_vel", 1, &BipedController::cmdVelCallback, this);
   gTStateSub_ = controllerNH.subscribe("/ground_truth/state", 1, &BipedController::stateUpdateCallback, this);
-
-  jointDebugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/debug_info", 1, true);
-  obsDebugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/obs_debug_info", 1, true);
+  joyInfoSub_ = controllerNH.subscribe("/joy", 1000, &BipedController::joyInfoCallback, this);
+  switchCtrlClient_ = controllerNH.serviceClient<controller_manager_msgs::SwitchController>("/controller_manager/switch_controller");
 
   return true;
 }
 
 void BipedController::starting(const ros::Time& time) {
+  for (auto& hybridJointHandle : hybridJointHandles_) {
+    initJointAngles_.push_back(hybridJointHandle.getPosition());
+  }
+  scalar_t durationSecs = 2.0;
+  standDuration_ = durationSecs * 1000.0;
+  standPercent_ += 1 / standDuration_;
+  mode_ = Mode::LIE;
+
   loopCount_ = 0;
 }
 
 void BipedController::update(const ros::Time& time, const ros::Duration& period) {
+  switch (mode_) {
+    case Mode::LIE:
+      handleLieMode();
+      break;
+    case Mode::STAND:
+      handleStandMode();
+      break;
+    case Mode::WALK:
+      handleWalkMode();
+      break;
+    default:
+      ROS_ERROR_STREAM("Unexpected mode encountered: " << static_cast<int>(mode_));
+      break;
+  }
+
+  loopCount_++;
+}
+
+void BipedController::handleLieMode() {
+  if (standPercent_ < 1) {
+    for (int j = 0; j < hybridJointHandles_.size(); j++) {
+      scalar_t pos_des = initJointAngles_[j] * (1 - standPercent_) + defaultJointAngles_[j] * standPercent_;
+      hybridJointHandles_[j].setCommand(pos_des, 0, 60, 4, 0);
+    }
+    standPercent_ += 1 / standDuration_;
+  } else {
+    mode_ = Mode::STAND;
+  }
+}
+
+void BipedController::handleStandMode() {
+  //  if (loopCount_ > 8000) {
+  //    mode_ = Mode::WALK;
+  //  }
+}
+
+void BipedController::handleWalkMode() {
   // compute observation & actions
   if (loopCount_ % robotCfg_.controlCfg.decimation == 0) {
     computeObservation();
-    //    computeEncoder();
+    computeEncoder();
     computeActions();
     // limit action range
     scalar_t actionMin = -robotCfg_.clipActions;
@@ -65,24 +109,11 @@ void BipedController::update(const ros::Time& time, const ros::Duration& period)
 
   // set action
   std_msgs::Float32MultiArray debugInfoArray;
-  debugInfoArray.data.resize(hybridJointHandles_.size() * 6);  // qDes, qMeasure, qError, qdMeasure, tauMeasure
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
     scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
-
-    debugInfoArray.data[i * 6] = pos_des;
-    debugInfoArray.data[i * 6 + 1] = hybridJointHandles_[i].getPosition();
-    debugInfoArray.data[i * 6 + 2] = debugInfoArray.data[i * 6] - debugInfoArray.data[i * 6 + 1];
-    debugInfoArray.data[i * 6 + 3] = hybridJointHandles_[i].getVelocity();
-    debugInfoArray.data[i * 6 + 4] = hybridJointHandles_[i].getEffort();
-    debugInfoArray.data[i * 6 + 5] = robotCfg_.controlCfg.stiffness * (pos_des - debugInfoArray.data[i * 6 + 1]) -
-                                     robotCfg_.controlCfg.damping * debugInfoArray.data[i * 6 + 3];
-
     lastActions_(i, 0) = actions_[i];
   }
-  jointDebugPub_.publish(debugInfoArray);
-
-  loopCount_++;
 }
 
 void BipedController::computeActions() {
@@ -93,9 +124,9 @@ void BipedController::computeActions() {
   for (const auto& item : observations_) {
     combined_obs.push_back(item);
   }
-  //  for (const auto& item : encoderOut_) {
-  //    combined_obs.push_back(item);
-  //  }
+  for (const auto& item : encoderOut_) {
+    combined_obs.push_back(item);
+  }
   inputValues.push_back(Ort::Value::CreateTensor<tensor_element_t>(memoryInfo, combined_obs.data(), combined_obs.size(),
                                                                    policyInputShapes_[0].data(), policyInputShapes_[0].size()));
   // run inference
@@ -172,8 +203,6 @@ void BipedController::computeObservation() {
   matrix_t commandScaler = Eigen::DiagonalMatrix<scalar_t, 3>(obsScales.linVel, obsScales.linVel, obsScales.angVel);
 
   vector_t obs(observationSize_);
-  std_msgs::Float32MultiArray debugInfoArray;
-  debugInfoArray.data.resize(observationSize_);
   // clang-format off
   obs << projectedGravity,
       baseAngVel,
@@ -185,24 +214,18 @@ void BipedController::computeObservation() {
       gait;
   // clang-format on
 
-  for (size_t i = 0; i < observationSize_; i++) {
-    debugInfoArray.data[i] = obs[i];
+  if (isfirstRecObs_) {
+    int64_t inputSize =
+        std::accumulate(encoderInputShapes_[0].begin(), encoderInputShapes_[0].end(), static_cast<int64_t>(1), std::multiplies<int64_t>());
+    proprioHistoryBuffer_.resize(inputSize);
+    for (size_t i = 0; i < obsHistoryLength_; i++) {
+      proprioHistoryBuffer_.segment(i * observationSize_, observationSize_) = obs.cast<tensor_element_t>();
+    }
+    isfirstRecObs_ = false;
   }
-  obsDebugPub_.publish(debugInfoArray);
-
-  //  if (isfirstRecObs_) {
-  //    int64_t inputSize =
-  //        std::accumulate(encoderInputShapes_[0].begin(), encoderInputShapes_[0].end(), static_cast<int64_t>(1),
-  //        std::multiplies<int64_t>());
-  //    proprioHistoryBuffer_.resize(inputSize);
-  //    for (size_t i = 0; i < obsHistoryLength_; i++) {
-  //      proprioHistoryBuffer_.segment(i * observationSize_, observationSize_) = obs.cast<tensor_element_t>();
-  //    }
-  //    isfirstRecObs_ = false;
-  //  }
-  //  proprioHistoryBuffer_.head(proprioHistoryBuffer_.size() - observationSize_) =
-  //      proprioHistoryBuffer_.tail(proprioHistoryBuffer_.size() - observationSize_);
-  //  proprioHistoryBuffer_.tail(observationSize_) = obs.cast<tensor_element_t>();
+  proprioHistoryBuffer_.head(proprioHistoryBuffer_.size() - observationSize_) =
+      proprioHistoryBuffer_.tail(proprioHistoryBuffer_.size() - observationSize_);
+  proprioHistoryBuffer_.tail(observationSize_) = obs.cast<tensor_element_t>();
 
   for (size_t i = 0; i < obs.size(); i++) {
     observations_[i] = static_cast<tensor_element_t>(obs(i));
@@ -269,41 +292,41 @@ bool BipedController::loadModel(ros::NodeHandle& nh) {
     std::cout << "]" << std::endl;
   }
 
-  //  // encoder session
-  //  std::cout << "load encoder from" << encoderModelPath.c_str() << std::endl;
-  //  encoderSessionPtr_ = std::make_unique<Ort::Session>(*onnxEnvPrt_, encoderModelPath.c_str(), sessionOptions);
-  //  encoderInputNames_.clear();
-  //  encoderOutputNames_.clear();
-  //  encoderInputShapes_.clear();
-  //  encoderOutputShapes_.clear();
-  //  for (int i = 0; i < encoderSessionPtr_->GetInputCount(); i++) {
-  //    encoderInputNames_.push_back(encoderSessionPtr_->GetInputName(i, allocator));
-  //    encoderInputShapes_.push_back(encoderSessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
-  //    std::cerr << encoderSessionPtr_->GetInputName(i, allocator) << std::endl;
-  //    std::vector<int64_t> shape = encoderSessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
-  //    std::cerr << "Shape: [";
-  //    for (size_t j = 0; j < shape.size(); ++j) {
-  //      std::cout << shape[j];
-  //      if (j != shape.size() - 1) {
-  //        std::cerr << ", ";
-  //      }
-  //    }
-  //    std::cout << "]" << std::endl;
-  //  }
-  //  for (int i = 0; i < encoderSessionPtr_->GetOutputCount(); i++) {
-  //    encoderOutputNames_.push_back(encoderSessionPtr_->GetOutputName(i, allocator));
-  //    std::cerr << encoderSessionPtr_->GetOutputName(i, allocator) << std::endl;
-  //    encoderOutputShapes_.push_back(encoderSessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
-  //    std::vector<int64_t> shape = encoderSessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
-  //    std::cerr << "Shape: [";
-  //    for (size_t j = 0; j < shape.size(); ++j) {
-  //      std::cout << shape[j];
-  //      if (j != shape.size() - 1) {
-  //        std::cerr << ", ";
-  //      }
-  //    }
-  //    std::cout << "]" << std::endl;
-  //  }
+  // encoder session
+  std::cout << "load encoder from" << encoderModelPath.c_str() << std::endl;
+  encoderSessionPtr_ = std::make_unique<Ort::Session>(*onnxEnvPrt_, encoderModelPath.c_str(), sessionOptions);
+  encoderInputNames_.clear();
+  encoderOutputNames_.clear();
+  encoderInputShapes_.clear();
+  encoderOutputShapes_.clear();
+  for (int i = 0; i < encoderSessionPtr_->GetInputCount(); i++) {
+    encoderInputNames_.push_back(encoderSessionPtr_->GetInputName(i, allocator));
+    encoderInputShapes_.push_back(encoderSessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    std::cerr << encoderSessionPtr_->GetInputName(i, allocator) << std::endl;
+    std::vector<int64_t> shape = encoderSessionPtr_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
+    std::cerr << "Shape: [";
+    for (size_t j = 0; j < shape.size(); ++j) {
+      std::cout << shape[j];
+      if (j != shape.size() - 1) {
+        std::cerr << ", ";
+      }
+    }
+    std::cout << "]" << std::endl;
+  }
+  for (int i = 0; i < encoderSessionPtr_->GetOutputCount(); i++) {
+    encoderOutputNames_.push_back(encoderSessionPtr_->GetOutputName(i, allocator));
+    std::cerr << encoderSessionPtr_->GetOutputName(i, allocator) << std::endl;
+    encoderOutputShapes_.push_back(encoderSessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape());
+    std::vector<int64_t> shape = encoderSessionPtr_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
+    std::cerr << "Shape: [";
+    for (size_t j = 0; j < shape.size(); ++j) {
+      std::cout << shape[j];
+      if (j != shape.size() - 1) {
+        std::cerr << ", ";
+      }
+    }
+    std::cout << "]" << std::endl;
+  }
 
   ROS_INFO_STREAM("Load Onnx model from successfully !!!");
   return true;
@@ -379,6 +402,33 @@ void BipedController::stateUpdateCallback(const nav_msgs::Odometry& msg) {
   baseLinVel_(0) = msg.twist.twist.linear.x;
   baseLinVel_(1) = msg.twist.twist.linear.y;
   baseLinVel_(2) = msg.twist.twist.linear.z;
+}
+
+void BipedController::joyInfoCallback(const sensor_msgs::Joy& msg) {
+  if (msg.buttons[7] == 1) {
+    std::cout << "You have pressed the start button!!!!" << std::endl;
+    // set the string start_controllers to controllers/legged_controller
+    switchCtrlSrv_.request.start_controllers = {"controllers/biped_controller"};
+    switchCtrlSrv_.request.stop_controllers = {""};
+    switchCtrlSrv_.request.strictness = switchCtrlSrv_.request.BEST_EFFORT;
+    switchCtrlSrv_.request.start_asap = true;
+    switchCtrlSrv_.request.timeout = 0.0;
+    switchCtrlClient_.call(switchCtrlSrv_);
+  } else if (msg.buttons[0] == 1) {
+    std::cout << "You have pressed the stop button!!!!" << std::endl;
+    // set the string stop_controllers to controllers/legged_controller
+    switchCtrlSrv_.request.start_controllers = {""};
+    switchCtrlSrv_.request.stop_controllers = {"controllers/biped_controller"};
+    switchCtrlSrv_.request.strictness = switchCtrlSrv_.request.BEST_EFFORT;
+    switchCtrlSrv_.request.start_asap = true;
+    switchCtrlSrv_.request.timeout = 0.0;
+    switchCtrlClient_.call(switchCtrlSrv_);
+  }
+  if (msg.buttons[1] == 1) {
+    if (mode_ == Mode::STAND) {
+      mode_ = Mode::WALK;
+    }
+  }
 }
 
 }  // namespace legged
