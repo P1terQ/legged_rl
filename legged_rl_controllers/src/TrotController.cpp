@@ -26,16 +26,25 @@ void TrotController::handleWalkMode() {
     const auto& info = leggedInterface_->getCentroidalModelInfo();
     vector_t jointPos = rbdState_.segment(6, info.actuatedDofNum);
     vector_t jointVel = rbdState_.segment(6 + info.generalizedCoordinatesNum, info.actuatedDofNum);
+    float power[13] = {0}, torque[12];
     for (int i = 0; i < hybridJointHandles_.size(); i++) {
-      scalar_t actionMin =
-          jointPos(i) - defaultJointAngles_(i, 0) +
-          (robotCfg_.controlCfg.damping * jointVel(i) - robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
-      scalar_t actionMax =
-          jointPos(i) - defaultJointAngles_(i, 0) +
-          (robotCfg_.controlCfg.damping * jointVel(i) + robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+      float torque_limit = std::min(robotCfg_.controlCfg.user_torque_limit, robotCfg_.controlCfg.user_power_limit / fabsf(jointVel(i)));
+      torque_limit = robotCfg_.controlCfg.user_torque_limit;
+      scalar_t actionMin = jointPos(i) - defaultJointAngles_(i, 0) +
+                           (robotCfg_.controlCfg.damping * jointVel(i) - torque_limit) / robotCfg_.controlCfg.stiffness;
+      scalar_t actionMax = jointPos(i) - defaultJointAngles_(i, 0) +
+                           (robotCfg_.controlCfg.damping * jointVel(i) + torque_limit) / robotCfg_.controlCfg.stiffness;
       actions_[i] = std::max(actionMin / robotCfg_.controlCfg.actionScale,
                              std::min(actionMax / robotCfg_.controlCfg.actionScale, (scalar_t)actions_[i]));
+      torque[i] =
+          robotCfg_.controlCfg.stiffness * (actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0) - jointPos(i)) -
+          robotCfg_.controlCfg.damping * jointVel(i);
+      power[i] = fabsf(torque[i]) * fabsf(jointVel(i));
+      power[12] += power[i];
+      std::cout << "torque:" << fabsf(torque[i]) << "  jointVel:" << fabsf(jointVel[i]) << "  power:" << fabsf(power[i])
+                << "  total power:" << fabsf(power[12]) << std::endl;
     }
+    std::cout << std::endl;
   }
   int buttons = 0;
   for (int i = 0; i < 11; i++) {
@@ -208,6 +217,7 @@ bool TrotController::loadRLCfg(ros::NodeHandle& nh) {
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/action_scale", controlCfg.actionScale));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/decimation", controlCfg.decimation));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/user_torque_limit", controlCfg.user_torque_limit));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/user_power_limit", controlCfg.user_power_limit));
 
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_observations", robotCfg_.clipObs));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_actions", robotCfg_.clipActions));

@@ -33,6 +33,7 @@ struct RLRobotCfg {
     float actionScale;
     int decimation;
     float user_torque_limit;
+    float user_power_limit;
   };
 
   struct InitState {

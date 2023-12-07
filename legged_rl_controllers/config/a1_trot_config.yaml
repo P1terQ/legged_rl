@@ -25,6 +25,7 @@ LeggedRobotCfg:
     action_scale: 0.25
     decimation: 10
     user_torque_limit: 30
+    user_power_limit: 400
 
   normalization:
     clip_scales:
