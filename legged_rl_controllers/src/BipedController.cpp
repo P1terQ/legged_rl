@@ -41,6 +41,8 @@ bool BipedController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle
   gTStateSub_ = controllerNH.subscribe("/ground_truth/state", 1, &BipedController::stateUpdateCallback, this);
   joyInfoSub_ = controllerNH.subscribe("/joy", 1000, &BipedController::joyInfoCallback, this);
   switchCtrlClient_ = controllerNH.serviceClient<controller_manager_msgs::SwitchController>("/controller_manager/switch_controller");
+  jointDebugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/debug_info", 1, true);
+  obsDebugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/obs_debug_info", 1, true);
 
   return true;
 }
@@ -89,7 +91,7 @@ void BipedController::handleLieMode() {
 }
 
 void BipedController::handleStandMode() {
-  //  if (loopCount_ > 8000) {
+  //  if (loopCount_ > 5000) {
   //    mode_ = Mode::WALK;
   //  }
 }
@@ -109,11 +111,25 @@ void BipedController::handleWalkMode() {
 
   // set action
   std_msgs::Float32MultiArray debugInfoArray;
+  debugInfoArray.data.resize(hybridJointHandles_.size() * 6);
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
     scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
+
+    //    hybridJointHandles_[i].setCommand(0, 0, 0, 0,
+    //                                      robotCfg_.controlCfg.stiffness * (pos_des - hybridJointHandles_[i].getPosition()) -
+    //                                          robotCfg_.controlCfg.damping * hybridJointHandles_[i].getVelocity());
     lastActions_(i, 0) = actions_[i];
+
+    debugInfoArray.data[i * 6] = pos_des;
+    debugInfoArray.data[i * 6 + 1] = hybridJointHandles_[i].getPosition();
+    debugInfoArray.data[i * 6 + 2] = debugInfoArray.data[i * 6] - debugInfoArray.data[i * 6 + 1];
+    debugInfoArray.data[i * 6 + 3] = hybridJointHandles_[i].getVelocity();
+    debugInfoArray.data[i * 6 + 4] = hybridJointHandles_[i].getEffort();
+    debugInfoArray.data[i * 6 + 5] = robotCfg_.controlCfg.stiffness * (pos_des - debugInfoArray.data[i * 6 + 1]) -
+                                     robotCfg_.controlCfg.damping * debugInfoArray.data[i * 6 + 3];
   }
+  jointDebugPub_.publish(debugInfoArray);
 }
 
 void BipedController::computeActions() {
@@ -203,6 +219,8 @@ void BipedController::computeObservation() {
   matrix_t commandScaler = Eigen::DiagonalMatrix<scalar_t, 3>(obsScales.linVel, obsScales.linVel, obsScales.angVel);
 
   vector_t obs(observationSize_);
+  std_msgs::Float32MultiArray debugInfoArray;
+  debugInfoArray.data.resize(observationSize_);
   // clang-format off
   obs << projectedGravity,
       baseAngVel,
@@ -213,6 +231,10 @@ void BipedController::computeObservation() {
       gait_clock,
       gait;
   // clang-format on
+  for (size_t i = 0; i < observationSize_; i++) {
+    debugInfoArray.data[i] = obs[i];
+  }
+  obsDebugPub_.publish(debugInfoArray);
 
   if (isfirstRecObs_) {
     int64_t inputSize =

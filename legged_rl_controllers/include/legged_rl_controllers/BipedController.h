@@ -141,6 +141,7 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
 
   // debug
   ros::Publisher jointDebugPub_;
+  ros::Publisher obsDebugPub_;
 };
 
 template <typename T>
