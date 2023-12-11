@@ -219,6 +219,8 @@ bool AliengoController::loadRLCfg(ros::NodeHandle& nh) {
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/user_torque_limit", controlCfg.user_torque_limit));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/user_power_limit", controlCfg.user_power_limit));
 
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/encoder_nomalize", robotCfg_.encoder_nomalize));
+
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_observations", robotCfg_.clipObs));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_actions", robotCfg_.clipActions));
 
@@ -331,8 +333,10 @@ void AliengoController::computeEncoder() {
     gaitGeneratorOutNorm += gaitGeneratorOut_[i] * gaitGeneratorOut_[i];
   }
   // for gait generator
-  for (int i = 0; i < gaitGeneratorOutputSize_; i++) {
-    gaitGeneratorOut_[i] /= sqrt(gaitGeneratorOutNorm);
+  if (robotCfg_.encoder_nomalize) {
+    for (int i = 0; i < gaitGeneratorOutputSize_; i++) {
+      gaitGeneratorOut_[i] /= sqrt(gaitGeneratorOutNorm);
+    }
   }
 }
 
@@ -358,6 +362,14 @@ void AliengoController::computeObservation() {
   if (joyInfo.buttons[5]) {
     command(0) *= 2;
     command(1) *= 2;
+    command(2) *= 2;
+    if (joyInfo.buttons[4]) {
+      command(0) *= 1.5;
+      command(1) *= 1.5;
+    }
+  } else if (joyInfo.buttons[4]) {
+    command(0) *= 0.75;
+    command(1) *= 0.75;
   }
   // std::cout << command(0) << " " << command(1) << " " << command(3) << std::endl;
 

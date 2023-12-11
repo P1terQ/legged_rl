@@ -63,6 +63,8 @@ struct RLRobotCfg {
     scalar_t heightMeasurements;
   };
 
+  bool encoder_nomalize;
+
   scalar_t clipActions;
   scalar_t clipObs;
 

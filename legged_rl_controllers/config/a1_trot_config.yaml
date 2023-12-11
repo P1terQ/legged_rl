@@ -28,6 +28,7 @@ LeggedRobotCfg:
     user_power_limit: 400
 
   normalization:
+    encoder_nomalize: True
     clip_scales:
       clip_observations: 100.
       clip_actions: 100.
