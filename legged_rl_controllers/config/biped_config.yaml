@@ -16,6 +16,7 @@ LeggedRobotCfg:
     damping: 1.5
     action_scale: 0.25
     decimation: 10
+    user_torque_limit: 30
 
   normalization:
     clip_scales:
@@ -35,6 +36,6 @@ LeggedRobotCfg:
     encoder_output_size: 3
 
   imu_orientation_offset:
-    roll: 0.00
-    pitch: 0.00
+    roll: 0.0
+    pitch: -0.009
     yaw: 0.0

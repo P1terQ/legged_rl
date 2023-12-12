@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 
 <launch>
-    <arg name="robot_type" default="$(env ROBOT_TYPE)" doc="Robot type: [biped]"/>
+    <arg name="robot_type" default="$(env ROBOT_TYPE)" doc="Robot type: [biped, xiaotian]"/>
 
     <arg name="cheater" default="false"/>
 

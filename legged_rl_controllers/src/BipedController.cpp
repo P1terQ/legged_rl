@@ -112,13 +112,23 @@ void BipedController::handleWalkMode() {
   // set action
   std_msgs::Float32MultiArray debugInfoArray;
   debugInfoArray.data.resize(hybridJointHandles_.size() * 6);
+  vector_t jointPos(hybridJointHandles_.size()), jointVel(hybridJointHandles_.size());
+  for (size_t i = 0; i < hybridJointHandles_.size(); ++i) {
+    jointPos(i) = hybridJointHandles_[i].getPosition();
+    jointVel(i) = hybridJointHandles_[i].getVelocity();
+  }
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
+    scalar_t actionMin =
+        jointPos(i) - defaultJointAngles_(i, 0) +
+        (robotCfg_.controlCfg.damping * jointVel(i) - robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+    scalar_t actionMax =
+        jointPos(i) - defaultJointAngles_(i, 0) +
+        (robotCfg_.controlCfg.damping * jointVel(i) + robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+    actions_[i] = std::max(actionMin / robotCfg_.controlCfg.actionScale,
+                           std::min(actionMax / robotCfg_.controlCfg.actionScale, (scalar_t)actions_[i]));
     scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
 
-    //    hybridJointHandles_[i].setCommand(0, 0, 0, 0,
-    //                                      robotCfg_.controlCfg.stiffness * (pos_des - hybridJointHandles_[i].getPosition()) -
-    //                                          robotCfg_.controlCfg.damping * hybridJointHandles_[i].getVelocity());
     lastActions_(i, 0) = actions_[i];
 
     debugInfoArray.data[i * 6] = pos_des;
@@ -372,6 +382,7 @@ bool BipedController::loadRLCfg(ros::NodeHandle& nh) {
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/damping", controlCfg.damping));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/action_scale", controlCfg.actionScale));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/decimation", controlCfg.decimation));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/user_torque_limit", controlCfg.user_torque_limit));
 
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_observations", robotCfg_.clipObs));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_actions", robotCfg_.clipActions));
