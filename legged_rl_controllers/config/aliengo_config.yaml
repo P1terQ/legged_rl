@@ -45,7 +45,7 @@ LeggedRobotCfg:
     commands_size: 3
     obs_history_length: 5
     encoder_output_size: 3
-    gait_generator_output_size: 16
+    gait_generator_output_size: 32
 
 module:
   module_path: "/home/ubuntu/catkin_ws/src/legged_rl/legged_rl_controllers/policy/aliengo_policy/policy_1.onnx"

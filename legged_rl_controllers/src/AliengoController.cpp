@@ -450,6 +450,47 @@ void AliengoController::computeObservation() {
                  [obsMin, obsMax](scalar_t x) { return std::max(obsMin, std::min(obsMax, x)); });
 }
 
+void AliengoController::joyInfoCallback(const sensor_msgs::Joy& msg) {
+  if (msg.header.frame_id.empty()) {
+    return;
+  }
+  // memcpy(joyInfo.axes, msg.axes, sizeof(joyInfo.axes));
+  // memcpy(joyInfo.buttons, msg.buttons, sizeof(joyInfo.buttons));
+  for (int i = 0; i < msg.axes.size(); i++) {
+    joyInfo.axes[i] = msg.axes[i];
+    // std::cout << joyInfo.axes[i];
+    // std::cout << std::endl;
+  }
+  for (int i = 0; i < msg.buttons.size(); i++) {
+    joyInfo.buttons[i] = msg.buttons[i];
+    // std::cout << joyInfo.buttons[i];
+    // std::cout << std::endl;
+  }
+  if (msg.buttons[7] == 1) {
+    std::cout << "You have pressed the start button!!!!" << std::endl;
+    // set the string start_controllers to controllers/legged_controller
+    switchCtrlSrv_.request.start_controllers = {"controllers/aliengo_controller"};
+    switchCtrlSrv_.request.stop_controllers = {""};
+    switchCtrlSrv_.request.strictness = switchCtrlSrv_.request.BEST_EFFORT;
+    switchCtrlSrv_.request.start_asap = true;
+    switchCtrlSrv_.request.timeout = 0.0;
+    switchCtrlClient_.call(switchCtrlSrv_);
+  } else if (msg.buttons[6] == 1) {
+    std::cout << "You have pressed the stop button!!!!" << std::endl;
+    // set the string stop_controllers to controllers/legged_controller
+    switchCtrlSrv_.request.start_controllers = {""};
+    switchCtrlSrv_.request.stop_controllers = {"controllers/aliengo_controller"};
+    switchCtrlSrv_.request.strictness = switchCtrlSrv_.request.BEST_EFFORT;
+    switchCtrlSrv_.request.start_asap = true;
+    switchCtrlSrv_.request.timeout = 0.0;
+    switchCtrlClient_.call(switchCtrlSrv_);
+    // set action
+    for (int i = 0; i < hybridJointHandles_.size(); i++) {
+      hybridJointHandles_[i].setCommand(0, 0, 0, 8, 0);
+    }
+  }
+}
+
 }  // namespace legged
 
 PLUGINLIB_EXPORT_CLASS(legged::AliengoController, controller_interface::ControllerBase)

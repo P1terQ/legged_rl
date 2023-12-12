@@ -24,6 +24,7 @@ class AliengoController : public RLControllerBase {
   void computeEncoder();
   void computeObservation() override;
   void handleWalkMode() override;
+  void joyInfoCallback(const sensor_msgs::Joy& msg) override;
 
  private:
   // onnx policy model

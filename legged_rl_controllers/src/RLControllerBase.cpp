@@ -60,6 +60,7 @@ bool RLControllerBase::init(hardware_interface::RobotHW* robotHw, ros::NodeHandl
 
   cmdVelSub_ = controllerNH.subscribe("/cmd_vel", 1, &RLControllerBase::cmdVelCallback, this);
   joyInfoSub_ = controllerNH.subscribe("/joy", 1000, &RLControllerBase::joyInfoCallback, this);
+  switchCtrlClient_ = controllerNH.serviceClient<controller_manager_msgs::SwitchController>("/controller_manager/switch_controller");
 
   return true;
 }
@@ -67,20 +68,22 @@ bool RLControllerBase::init(hardware_interface::RobotHW* robotHw, ros::NodeHandl
 void RLControllerBase::starting(const ros::Time& time) {
   updateStateEstimation(time, ros::Duration(0.002));
 
-  for (auto& hybridJointHandle : hybridJointHandles_) {
-    initJointAngles_.push_back(hybridJointHandle.getPosition());
+  initJointAngles_.resize(hybridJointHandles_.size());
+  for (size_t i = 0; i < hybridJointHandles_.size(); i++) {
+    initJointAngles_[i] = hybridJointHandles_[i].getPosition();
   }
 
   scalar_t durationSecs = 2.0;
   standDuration_ = durationSecs * 1000.0;
-  standPercent_ += 1 / standDuration_;
+  standPercent_ = 0;
   mode_ = Mode::LIE;
   loopCount_ = 0;
 }
 
 void RLControllerBase::update(const ros::Time& time, const ros::Duration& period) {
   updateStateEstimation(time, period);
-
+  std::cout << " loopCount_" << loopCount_ << " standPercent_" << standPercent_ << " initJointAngles_[0]" << initJointAngles_[0]
+            << std::endl;
   switch (mode_) {
     case Mode::LIE:
       handleLieMode();

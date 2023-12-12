@@ -14,6 +14,7 @@
 #include <legged_interface/LeggedInterface.h>
 #include <std_msgs/Float32MultiArray.h>
 
+#include <controller_manager_msgs/SwitchController.h>
 #include <ocs2_centroidal_model/CentroidalModelRbdConversions.h>
 #include <ocs2_mpc/SystemObservation.h>
 #include <ocs2_robotic_tools/common/RotationTransforms.h>
@@ -104,8 +105,8 @@ class RLControllerBase : public controller_interface::MultiInterfaceController<H
                                     bool verbose);
   virtual void setupStateEstimate(const std::string& taskFile, bool verbose);
 
-  void cmdVelCallback(const geometry_msgs::Twist& msg);
-  void joyInfoCallback(const sensor_msgs::Joy& msg);
+  virtual void cmdVelCallback(const geometry_msgs::Twist& msg);
+  virtual void joyInfoCallback(const sensor_msgs::Joy& msg);
 
   Mode mode_;
   int64_t loopCount_;
@@ -127,6 +128,11 @@ class RLControllerBase : public controller_interface::MultiInterfaceController<H
   hardware_interface::ImuSensorHandle imuSensorHandles_;
   std::vector<ContactSensorHandle> contactHandles_;
 
+  ros::Subscriber cmdVelSub_;
+  ros::Subscriber joyInfoSub_;
+  controller_manager_msgs::SwitchController switchCtrlSrv_;
+  ros::ServiceClient switchCtrlClient_;
+
  private:
   // PD stand
   std::vector<scalar_t> initJointAngles_;
@@ -134,8 +140,5 @@ class RLControllerBase : public controller_interface::MultiInterfaceController<H
 
   scalar_t standPercent_;
   scalar_t standDuration_;
-
-  ros::Subscriber cmdVelSub_;
-  ros::Subscriber joyInfoSub_;
 };
 }  // namespace legged
