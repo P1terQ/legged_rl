@@ -5,11 +5,13 @@
 #pragma once
 
 #include <controller_interface/multi_interface_controller.h>
+#include <controller_manager_msgs/SwitchController.h>
 #include <gazebo_msgs/ModelStates.h>
 #include <hardware_interface/imu_sensor_interface.h>
 #include <legged_common/hardware_interface/ContactSensorInterface.h>
 #include <legged_common/hardware_interface/HybridJointInterface.h>
 #include <nav_msgs/Odometry.h>
+#include <sensor_msgs/Joy.h>
 
 #include <ocs2_core/Types.h>
 #include <ocs2_legged_robot/common/Types.h>
@@ -61,6 +63,8 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
   using tensor_element_t = float;
 
  public:
+  enum class Mode : uint8_t { LIE, STAND, WALK };
+
   BipedController() = default;
   virtual ~BipedController() = default;
   virtual bool init(hardware_interface::RobotHW* robotHw, ros::NodeHandle& controllerNH);
@@ -73,7 +77,12 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
   virtual void computeEncoder();
   virtual void computeObservation();
 
+  virtual void handleLieMode();
+  virtual void handleStandMode();
+  virtual void handleWalkMode();
+
  protected:
+  Mode mode_;
   int64_t loopCount_;
   vector3_t command_;
   RLRobotCfg robotCfg_{};
@@ -91,6 +100,7 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
 
   void cmdVelCallback(const geometry_msgs::Twist& msg);
   void stateUpdateCallback(const nav_msgs::Odometry& msg);
+  void joyInfoCallback(const sensor_msgs::Joy& msg);
 
  private:
   // onnx policy model
@@ -118,8 +128,20 @@ class BipedController : public controller_interface::MultiInterfaceController<Hy
   std::vector<tensor_element_t> encoderOut_;
   Eigen::Matrix<tensor_element_t, Eigen::Dynamic, 1> proprioHistoryBuffer_;
 
+  // PD stand
+  std::vector<scalar_t> initJointAngles_;
+  scalar_t standPercent_;
+  scalar_t standDuration_;
+
   ros::Subscriber gTStateSub_;
   ros::Subscriber cmdVelSub_;
+  ros::Subscriber joyInfoSub_;
+  controller_manager_msgs::SwitchController switchCtrlSrv_;
+  ros::ServiceClient switchCtrlClient_;
+
+  // debug
+  ros::Publisher jointDebugPub_;
+  ros::Publisher obsDebugPub_;
 };
 
 template <typename T>

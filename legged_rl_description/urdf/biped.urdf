@@ -165,11 +165,7 @@
                 link="abad_L_Link"/>
         <axis
                 xyz="1 0 0"/>
-        <limit
-                lower="-0.69813"
-                upper="1.39626"
-                effort="20"
-                velocity="52.4"/>
+        <limit effort="80.0" lower="-0.383972435" upper="0.785398163" velocity="20.0"/>
     </joint>
     <link
             name="hip_L_Link">
@@ -219,12 +215,8 @@
         <child
                 link="hip_L_Link"/>
         <axis
-                xyz="0 -1 0"/>
-        <limit
-                lower="-1.012"
-                upper="1.012"
-                effort="30"
-                velocity="52.4"/>
+                xyz="0 1 0"/>
+        <limit effort="80.0" lower="-1.047197551" upper="1.483529864" velocity="20.0"/>
     </joint>
     <link
             name="knee_L_Link">
@@ -275,11 +267,7 @@
                 link="knee_L_Link"/>
         <axis
                 xyz="0 -1 0"/>
-        <limit
-                lower="-1.04719"
-                upper="1.39626"
-                effort="30"
-                velocity="52.4"/>
+        <limit effort="80" lower="-1.012290966" upper="1.256637061" velocity="20"/>
     </joint>
     <link
             name="foot_L_Link">
@@ -312,9 +300,9 @@
             </material>
         </visual>
     <collision>
-      <origin xyz="0 0 0.035" rpy="0 0 0"/>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.04"/>
       </geometry>
     </collision>
     </link>
@@ -435,12 +423,8 @@
         <child
                 link="abad_R_Link"/>
         <axis
-                xyz="-1 0 0"/>
-        <limit
-                lower="-0.69813"
-                upper="1.39626"
-                effort="30"
-                velocity="52.4"/>
+                xyz="1 0 0"/>
+        <limit effort="80.0" lower="-0.785398163" upper="0.383972435" velocity="20.0"/>
     </joint>
     <link
             name="hip_R_Link">
@@ -491,11 +475,7 @@
                 link="hip_R_Link"/>
         <axis
                 xyz="0 -1 0"/>
-        <limit
-                lower="-1.012"
-                upper="1.012"
-                effort="30"
-                velocity="52.4"/>
+        <limit effort="80.0" lower="-1.483529864" upper="1.047197551" velocity="20.0"/>
     </joint>
     <link
             name="knee_R_Link">
@@ -546,11 +526,7 @@
                 link="knee_R_Link"/>
         <axis
                 xyz="0 1 0"/>
-        <limit
-                lower="-1.39626"
-                upper="1.04719"
-                effort="30"
-                velocity="52.4"/>
+        <limit effort="80" lower="-1.256637061" upper="1.012290966" velocity="20"/>
     </joint>
     <link
             name="foot_R_Link">
@@ -583,9 +559,9 @@
             </material>
         </visual>
     <collision>
-      <origin xyz="0 0 0.035" rpy="0 0 0"/>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.04"/>
       </geometry>
     </collision>
     </link>

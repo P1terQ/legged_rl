@@ -1,19 +1,18 @@
 <?xml version="1.0" ?>
 
 <launch>
-    <arg name="robot_type" default="$(env ROBOT_TYPE)" doc="Robot type: [biped]"/>
+    <arg name="robot_type" default="$(env ROBOT_TYPE)" doc="Robot type: [biped, xiaotian]"/>
 
-    <arg name="cheater" default="false"/>
 
     <!-- make the files into global parameters -->
-    <param name="policyModelPath" value="$(find legged_rl_controllers)/policy/biped_policy/policy.onnx"/>
-    <param name="encoderModelPath" value="$(find legged_rl_controllers)/policy/biped_policy/encoder.onnx"/>
+    <param name="policyModelPath" value="$(find legged_rl_controllers)/policy/$(arg robot_type)_policy/policy.onnx"/>
+    <param name="encoderModelPath" value="$(find legged_rl_controllers)/policy/$(arg robot_type)_policy/encoder.onnx"/>
 
     <arg name="rl_config_file" default="biped_config.yaml"/>
     <rosparam file="$(find legged_rl_controllers)/config/controllers.yaml" command="load"/>
     <rosparam file="$(find legged_rl_controllers)/config/$(arg rl_config_file)" command="load"/>
 
-    <node unless="$(arg cheater)" name="controller_loader" pkg="controller_manager" type="controller_manager"
+    <node name="controller_loader" pkg="controller_manager" type="controller_manager"
           output="screen" args="load
           controllers/joint_state_controller
           controllers/biped_controller
