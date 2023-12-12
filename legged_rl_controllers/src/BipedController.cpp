@@ -5,6 +5,8 @@
 
 #include "legged_rl_controllers/BipedController.h"
 
+#include <std_msgs/Float32MultiArray.h>
+
 #include <ocs2_robotic_tools/common/RotationTransforms.h>
 
 #include <pluginlib/class_list_macros.hpp>
@@ -13,11 +15,11 @@ namespace legged {
 bool BipedController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle& controllerNH) {
   // Load policy model and rl cfg
   if (!loadModel(controllerNH)) {
-    ROS_ERROR_STREAM("[RLControllerBase] Failed to load the model. Ensure the path is correct and accessible.");
+    ROS_ERROR_STREAM("[BipedController] Failed to load the model. Ensure the path is correct and accessible.");
     return false;
   }
   if (!loadRLCfg(controllerNH)) {
-    ROS_ERROR_STREAM("[RLControllerBase] Failed to load the rl config. Ensure the yaml is correct and accessible.");
+    ROS_ERROR_STREAM("[BipedController] Failed to load the rl config. Ensure the yaml is correct and accessible.");
     return false;
   }
 
@@ -37,15 +39,64 @@ bool BipedController::init(hardware_interface::RobotHW* robotHw, ros::NodeHandle
 
   cmdVelSub_ = controllerNH.subscribe("/cmd_vel", 1, &BipedController::cmdVelCallback, this);
   gTStateSub_ = controllerNH.subscribe("/ground_truth/state", 1, &BipedController::stateUpdateCallback, this);
+  joyInfoSub_ = controllerNH.subscribe("/joy", 1000, &BipedController::joyInfoCallback, this);
+  switchCtrlClient_ = controllerNH.serviceClient<controller_manager_msgs::SwitchController>("/controller_manager/switch_controller");
+  jointDebugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/debug_info", 1, true);
+  obsDebugPub_ = controllerNH.advertise<std_msgs::Float32MultiArray>("/obs_debug_info", 1, true);
 
   return true;
 }
 
 void BipedController::starting(const ros::Time& time) {
+  for (auto& hybridJointHandle : hybridJointHandles_) {
+    initJointAngles_.push_back(hybridJointHandle.getPosition());
+  }
+  scalar_t durationSecs = 2.0;
+  standDuration_ = durationSecs * 1000.0;
+  standPercent_ += 1 / standDuration_;
+  mode_ = Mode::LIE;
+
   loopCount_ = 0;
 }
 
 void BipedController::update(const ros::Time& time, const ros::Duration& period) {
+  switch (mode_) {
+    case Mode::LIE:
+      handleLieMode();
+      break;
+    case Mode::STAND:
+      handleStandMode();
+      break;
+    case Mode::WALK:
+      handleWalkMode();
+      break;
+    default:
+      ROS_ERROR_STREAM("Unexpected mode encountered: " << static_cast<int>(mode_));
+      break;
+  }
+
+  loopCount_++;
+}
+
+void BipedController::handleLieMode() {
+  if (standPercent_ < 1) {
+    for (int j = 0; j < hybridJointHandles_.size(); j++) {
+      scalar_t pos_des = initJointAngles_[j] * (1 - standPercent_) + defaultJointAngles_[j] * standPercent_;
+      hybridJointHandles_[j].setCommand(pos_des, 0, 60, 4, 0);
+    }
+    standPercent_ += 1 / standDuration_;
+  } else {
+    mode_ = Mode::STAND;
+  }
+}
+
+void BipedController::handleStandMode() {
+  //  if (loopCount_ > 5000) {
+  //    mode_ = Mode::WALK;
+  //  }
+}
+
+void BipedController::handleWalkMode() {
   // compute observation & actions
   if (loopCount_ % robotCfg_.controlCfg.decimation == 0) {
     computeObservation();
@@ -59,13 +110,36 @@ void BipedController::update(const ros::Time& time, const ros::Duration& period)
   }
 
   // set action
+  std_msgs::Float32MultiArray debugInfoArray;
+  debugInfoArray.data.resize(hybridJointHandles_.size() * 6);
+  vector_t jointPos(hybridJointHandles_.size()), jointVel(hybridJointHandles_.size());
+  for (size_t i = 0; i < hybridJointHandles_.size(); ++i) {
+    jointPos(i) = hybridJointHandles_[i].getPosition();
+    jointVel(i) = hybridJointHandles_[i].getVelocity();
+  }
   for (int i = 0; i < hybridJointHandles_.size(); i++) {
+    scalar_t actionMin =
+        jointPos(i) - defaultJointAngles_(i, 0) +
+        (robotCfg_.controlCfg.damping * jointVel(i) - robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+    scalar_t actionMax =
+        jointPos(i) - defaultJointAngles_(i, 0) +
+        (robotCfg_.controlCfg.damping * jointVel(i) + robotCfg_.controlCfg.user_torque_limit) / robotCfg_.controlCfg.stiffness;
+    actions_[i] = std::max(actionMin / robotCfg_.controlCfg.actionScale,
+                           std::min(actionMax / robotCfg_.controlCfg.actionScale, (scalar_t)actions_[i]));
     scalar_t pos_des = actions_[i] * robotCfg_.controlCfg.actionScale + defaultJointAngles_(i, 0);
     hybridJointHandles_[i].setCommand(pos_des, 0, robotCfg_.controlCfg.stiffness, robotCfg_.controlCfg.damping, 0);
-    lastActions_(i, 0) = actions_[i];
-  }
 
-  loopCount_++;
+    lastActions_(i, 0) = actions_[i];
+
+    debugInfoArray.data[i * 6] = pos_des;
+    debugInfoArray.data[i * 6 + 1] = hybridJointHandles_[i].getPosition();
+    debugInfoArray.data[i * 6 + 2] = debugInfoArray.data[i * 6] - debugInfoArray.data[i * 6 + 1];
+    debugInfoArray.data[i * 6 + 3] = hybridJointHandles_[i].getVelocity();
+    debugInfoArray.data[i * 6 + 4] = hybridJointHandles_[i].getEffort();
+    debugInfoArray.data[i * 6 + 5] = robotCfg_.controlCfg.stiffness * (pos_des - debugInfoArray.data[i * 6 + 1]) -
+                                     robotCfg_.controlCfg.damping * debugInfoArray.data[i * 6 + 3];
+  }
+  jointDebugPub_.publish(debugInfoArray);
 }
 
 void BipedController::computeActions() {
@@ -155,16 +229,22 @@ void BipedController::computeObservation() {
   matrix_t commandScaler = Eigen::DiagonalMatrix<scalar_t, 3>(obsScales.linVel, obsScales.linVel, obsScales.angVel);
 
   vector_t obs(observationSize_);
+  std_msgs::Float32MultiArray debugInfoArray;
+  debugInfoArray.data.resize(observationSize_);
   // clang-format off
   obs << projectedGravity,
       baseAngVel,
       (jointPos - defaultJointAngles_) * obsScales.dofPos,
       jointVel * obsScales.dofVel,
-      commandScaler * command, 0.7,
+      commandScaler * command, 0.625,
       actions,
       gait_clock,
       gait;
   // clang-format on
+  for (size_t i = 0; i < observationSize_; i++) {
+    debugInfoArray.data[i] = obs[i];
+  }
+  obsDebugPub_.publish(debugInfoArray);
 
   if (isfirstRecObs_) {
     int64_t inputSize =
@@ -302,6 +382,7 @@ bool BipedController::loadRLCfg(ros::NodeHandle& nh) {
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/damping", controlCfg.damping));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/action_scale", controlCfg.actionScale));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/decimation", controlCfg.decimation));
+  error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/control/user_torque_limit", controlCfg.user_torque_limit));
 
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_observations", robotCfg_.clipObs));
   error += static_cast<int>(!nh.getParam("/LeggedRobotCfg/normalization/clip_scales/clip_actions", robotCfg_.clipActions));
@@ -354,6 +435,33 @@ void BipedController::stateUpdateCallback(const nav_msgs::Odometry& msg) {
   baseLinVel_(0) = msg.twist.twist.linear.x;
   baseLinVel_(1) = msg.twist.twist.linear.y;
   baseLinVel_(2) = msg.twist.twist.linear.z;
+}
+
+void BipedController::joyInfoCallback(const sensor_msgs::Joy& msg) {
+  if (msg.buttons[7] == 1) {
+    std::cout << "You have pressed the start button!!!!" << std::endl;
+    // set the string start_controllers to controllers/legged_controller
+    switchCtrlSrv_.request.start_controllers = {"controllers/biped_controller"};
+    switchCtrlSrv_.request.stop_controllers = {""};
+    switchCtrlSrv_.request.strictness = switchCtrlSrv_.request.BEST_EFFORT;
+    switchCtrlSrv_.request.start_asap = true;
+    switchCtrlSrv_.request.timeout = 0.0;
+    switchCtrlClient_.call(switchCtrlSrv_);
+  } else if (msg.buttons[0] == 1) {
+    std::cout << "You have pressed the stop button!!!!" << std::endl;
+    // set the string stop_controllers to controllers/legged_controller
+    switchCtrlSrv_.request.start_controllers = {""};
+    switchCtrlSrv_.request.stop_controllers = {"controllers/biped_controller"};
+    switchCtrlSrv_.request.strictness = switchCtrlSrv_.request.BEST_EFFORT;
+    switchCtrlSrv_.request.start_asap = true;
+    switchCtrlSrv_.request.timeout = 0.0;
+    switchCtrlClient_.call(switchCtrlSrv_);
+  }
+  if (msg.buttons[1] == 1) {
+    if (mode_ == Mode::STAND) {
+      mode_ = Mode::WALK;
+    }
+  }
 }
 
 }  // namespace legged

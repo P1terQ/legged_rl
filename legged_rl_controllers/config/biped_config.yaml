@@ -12,10 +12,11 @@ LeggedRobotCfg:
 
   control:
     # PD Drive parameters:
-    stiffness: 20.0
-    damping: 0.5
-    action_scale: 0.5
+    stiffness: 40.0
+    damping: 1.5
+    action_scale: 0.25
     decimation: 10
+    user_torque_limit: 30
 
   normalization:
     clip_scales:
@@ -35,6 +36,6 @@ LeggedRobotCfg:
     encoder_output_size: 3
 
   imu_orientation_offset:
-    roll: -0.03
-    pitch: 0.02
+    roll: 0.0
+    pitch: -0.009
     yaw: 0.0
