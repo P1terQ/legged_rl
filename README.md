@@ -66,3 +66,7 @@ start_asap: false
 timeout: 0.0" 
 ```
 
+## Trouble Shooting
+gazebo11 build google::protobuf error
+Solution: install v3.20.3. Better download protoc-3.20.3-linux-x86_64.zip in  https://github.com/protocolbuffers/protobuf/releases?page=4 and use the copy&paste way
+
