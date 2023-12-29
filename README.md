@@ -39,7 +39,7 @@ git clone git@github.com:qiayuanliao/legged_control.git
 git clone git@github.com:clearlab-sustech/legged_rl.git
 # Build legged_rl
 catkin config -DCMAKE_BUILD_TYPE=RelWithDebInfo
-catkin build legged_gazebo legged_unitree_description legged_rl_controllers legged_rl_description 
+catkin build -DPYTHON_EXECUTABLE=/usr/bin/python3 legged_gazebo legged_unitree_description legged_rl_controllers legged_rl_description
 ```
 
 ## Run
