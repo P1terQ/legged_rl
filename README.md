@@ -70,6 +70,13 @@ timeout: 0.0"
 ### gazebo11 build google::protobuf error
 Solution: install v3.20.3. Better download protoc-3.20.3-linux-x86_64.zip in  https://github.com/protocolbuffers/protobuf/releases?page=4 and use the copy&paste way
 
+### onnxruntime build error
+onnxruntime c++ should be installed first
+referecce:
+https://blog.csdn.net/Fenplan/article/details/116742180
+https://blog.51cto.com/u_15699099/5649211
+
+
 
 
 
