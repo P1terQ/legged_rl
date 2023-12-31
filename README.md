@@ -71,7 +71,12 @@ timeout: 0.0"
 Solution: install v3.20.3. Better download protoc-3.20.3-linux-x86_64.zip in  https://github.com/protocolbuffers/protobuf/releases?page=4 and use the copy&paste way
 
 ### onnxruntime build error
-onnxruntime c++ should be installed first
+onnxruntime c++ should be installed first. Then comment all the "GetIntputName" and "GetOutputName"
+```
+1. ./build.sh --config RelWithDebInfo --build_shared_lib --parallel
+2. cd build/Linux/RelWithDebInfo
+3. sudo make install
+```
 referecce:
 https://blog.csdn.net/Fenplan/article/details/116742180
 https://blog.51cto.com/u_15699099/5649211
